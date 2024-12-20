@@ -56,17 +56,17 @@ fi
 # Perform the corresponding operation according to the ACTION variable
 case "$ACTION" in
   "build")
-#    # pull the specific tag
-#    if ! git fetch --tags; then
-#        echo "can not fetch tags"
-#        exit 1
-#    fi
-#    if ! git checkout "$TAG"; then
-#        echo "can not checkout tag $TAG"
-#        exit 1
-#    fi
-#    # Build, specific Build_Path and Install_path, Install_Path need to use absolute path
-   meson setup -Dprefix=$INSTALL_PATH $BUILD_PATH
+    # pull the specific tag
+    if ! git fetch --tags; then
+        echo "can not fetch tags"
+        exit 1
+    fi
+    if ! git checkout "$TAG"; then
+        echo "can not checkout tag $TAG"
+        exit 1
+    fi
+    # Build, specific Build_Path and Install_path, Install_Path need to use absolute path
+  meson setup -Dprefix=$INSTALL_PATH $BUILD_PATH
     ninja -C $BUILD_PATH
     sudo ninja -C $BUILD_PATH install
     ;;
