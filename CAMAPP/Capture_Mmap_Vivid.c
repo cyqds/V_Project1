@@ -14,6 +14,7 @@ int main(){
 
     //setting format
     struct v4l2_format vfmt;
+    memset(&vfmt, 0, sizeof(vfmt));
     vfmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     vfmt.fmt.pix.width = 320;
     vfmt.fmt.pix.height = 180;

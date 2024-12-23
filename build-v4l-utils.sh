@@ -5,9 +5,10 @@ TAG_DEFAULT="v4l-utils-1.28.1"
 INSTALL_PATH_DEFAULT="/home/yongqi/Vscode_workspace/V_Project1/submodules/v4l-utils/install_dir"
 BUILD_PATH_DEFAULT="build/"
 ACTION="build"  
+N_JOBS_DEFAULT=$(nproc)
 
 # Parsing command line options
-while getopts ":t:p:b:ca" opt; do
+while getopts ":t:p:b:j:ca" opt; do
   case ${opt} in
     t )
       TAG=$OPTARG
@@ -23,6 +24,9 @@ while getopts ":t:p:b:ca" opt; do
       ;;
     a ) 
       ACTION="build"
+      ;;
+    j )
+      N_JOBS=$OPTARG
       ;;
     \? )
       echo "Invalid option: -$OPTARG" >&2
@@ -46,7 +50,10 @@ fi
 if [ -z "$BUILD_PATH" ]; then
   BUILD_PATH=$BUILD_PATH_DEFAULT
 fi
-
+#
+if [ -z "$N_JOBS" ]; then
+  N_JOBS=$N_JOBS_DEFAULT
+fi
 #switch to the v4l-utils submodule directory
 if ! cd submodules/v4l-utils/; then
     echo "cannot change directory to v4l-utils"
@@ -67,8 +74,8 @@ case "$ACTION" in
     fi
     # Build, specific Build_Path and Install_path, Install_Path need to use absolute path
   meson setup -Dprefix=$INSTALL_PATH $BUILD_PATH
-    ninja -C $BUILD_PATH
-    sudo ninja -C $BUILD_PATH install
+    ninja -C $BUILD_PATH -j $N_JOBS
+    sudo ninja -C $BUILD_PATH -j $N_JOBS install
     ;;
   "clean")
     rm -rf $BUILD_PATH
