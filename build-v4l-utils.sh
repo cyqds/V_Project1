@@ -5,7 +5,8 @@ TAG_DEFAULT="v4l-utils-1.28.1"
 INSTALL_PATH_DEFAULT="/home/yongqi/Vscode_workspace/V_Project1/submodules/v4l-utils/install_dir"
 BUILD_PATH_DEFAULT="build/"
 ACTION="build"  
-N_JOBS_DEFAULT=$(nproc)
+#N_JOBS_DEFAULT=$(nproc)
+N_JOBS_DEFAULT=4
 
 # Parsing command line options
 while getopts ":t:p:b:j:ca" opt; do

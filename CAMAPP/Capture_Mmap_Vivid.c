@@ -1,12 +1,18 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <linux/videodev2.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>    
 #include <sys/mman.h>
+#define BUFFER_COUNT 1
+#define DEVICE_PATH "/dev/video0"
+#define WIDTH 320
+#define HEIGHT 180
+#define V4L2_PIX_FMT V4L2_PIX_FMT_YUYV
 int main(){
     //open device
-    int fd = open("/dev/video0", O_RDWR);
+    int fd = open(DEVICE_PATH, O_RDWR);
     if(fd < 0){
         perror("open failed");
         return -1;
@@ -16,9 +22,9 @@ int main(){
     struct v4l2_format vfmt;
     memset(&vfmt, 0, sizeof(vfmt));
     vfmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    vfmt.fmt.pix.width = 320;
-    vfmt.fmt.pix.height = 180;
-    vfmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+    vfmt.fmt.pix.width = WIDTH;
+    vfmt.fmt.pix.height = HEIGHT;
+    vfmt.fmt.pix.pixelformat = V4L2_PIX_FMT;
     if(ioctl(fd, VIDIOC_S_FMT, &vfmt) < 0) {
         perror("setting format failed");
         return -1;
@@ -26,20 +32,22 @@ int main(){
 
     //request buffer
     struct v4l2_requestbuffers reqbuf;
+    memset(&reqbuf, 0, sizeof(reqbuf));
     reqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     reqbuf.memory = V4L2_MEMORY_MMAP;
-    reqbuf.count = 4;
+    reqbuf.count = BUFFER_COUNT;
     if(ioctl(fd, VIDIOC_REQBUFS, &reqbuf) < 0) {
         perror("requesting buffers failed");
         return -1;
     }
 
     // mapping
-    unsigned char *buffers[4];
-    unsigned int lengths[4];
+    unsigned char *buffers[BUFFER_COUNT];
+    unsigned int lengths[BUFFER_COUNT];
     struct v4l2_buffer mapbuffer;
+    memset(&mapbuffer, 0, sizeof(mapbuffer));
     mapbuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    for(int i = 0; i < reqbuf.count; i++){
+    for(int i = 0; i < BUFFER_COUNT; i++){
         mapbuffer.index = i;
         if(ioctl(fd, VIDIOC_QUERYBUF, &mapbuffer) < 0){
             perror("query buffer failed");
@@ -53,6 +61,7 @@ int main(){
             perror("放回失败");
         }
     }
+
     //capture
     int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if(ioctl(fd, VIDIOC_STREAMON, &type) < 0){
@@ -60,13 +69,14 @@ int main(){
         return -1;
     }
     //example: capture 1 frames
-    struct v4l2_buffer capturebuffer;
+    struct v4l2_buffer capturebuffer; 
+    memset(&capturebuffer, 0, sizeof(capturebuffer));   
     capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if(ioctl(fd, VIDIOC_DQBUF, &capturebuffer)  < 0){
         perror("dqbuf failed");
         return -1;
     }
-    FILE *fp = fopen("capture.yuyv", "wb");
+    FILE *fp = fopen("capture", "wb");
     if(fp == NULL){
         perror("fopen failed");
         return -1;
@@ -75,19 +85,31 @@ int main(){
     fclose(fp);
 
     //inform  the kernel that the buffer is free
-    // if(ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0){
-    //     perror("qbuf failed");
-    //     return -1;
-    // }
+    if(ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0){
+        perror("qbuf failed");
+        return -1;
+    }
     //stop capture
     if(ioctl(fd, VIDIOC_STREAMOFF, &type) < 0){
         perror("streamoff failed");
         return -1;
     }
     //free buffer
-    for(int i = 0; i < reqbuf.count; i++){
+    for(int i = 0; i < BUFFER_COUNT; i++){
         munmap(buffers[i], lengths[i]);
     }
+
+    //release buffer
+    memset(&reqbuf, 0, sizeof(reqbuf));
+    reqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    reqbuf.memory = V4L2_MEMORY_MMAP;
+    reqbuf.count = 0;
+    if(ioctl(fd, VIDIOC_REQBUFS, &reqbuf) < 0) {
+        perror("requesting buffers failed");
+        return -1;
+    }
+
+
     close(fd);
     return 0;
 

@@ -30,7 +30,7 @@ int main() {
     memset(&reqbuf, 0, sizeof(reqbuf));
     reqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     reqbuf.memory = V4L2_MEMORY_USERPTR;
-    reqbuf.count = 4;
+    reqbuf.count = 1;
     if (ioctl(fd, VIDIOC_REQBUFS, &reqbuf) < 0) {
         perror("requesting buffers failed");
         close(fd);
@@ -44,7 +44,7 @@ int main() {
     mapbuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
     for (int i = 0; i < reqbuf.count; i++) {
-        mapbuffer.index = i;
+        mapbuffer.index = i; 
         if (ioctl(fd, VIDIOC_QUERYBUF, &mapbuffer) < 0) {
             perror("query buffer failed");
             close(fd);
@@ -146,6 +146,16 @@ int main() {
     // Free buffers
     for (int i = 0; i < reqbuf.count; i++) {
         free(buffers[i]);
+    }
+
+    // Release buffers
+    memset(&reqbuf, 0, sizeof(reqbuf));
+    reqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    reqbuf.memory = V4L2_MEMORY_MMAP;
+    reqbuf.count = 4;
+    if(ioctl(fd, VIDIOC_REQBUFS, &reqbuf) < 0) {
+        perror("requesting buffers failed");
+        return -1;
     }
 
     close(fd);
