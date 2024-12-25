@@ -62,7 +62,7 @@ sleep(2);
         lengths[i] = mapbuffer.length;
    
         if (ioctl(fd,VIDIOC_QBUF,&mapbuffer)< 0){
-            perror("放回失败");
+            perror("qbuf failed");
         }
     }
 
@@ -83,7 +83,7 @@ sleep(2);
             return -1;
         }
  
-        // // 保存帧到文件
+        // // save to file
         char filename[20];
         snprintf(filename, sizeof(filename), "./output/capture%d", frame);
         FILE *fp = fopen(filename, "wb");
@@ -94,7 +94,7 @@ sleep(2);
         fwrite(buffers[capturebuffer.index], 1, lengths[capturebuffer.index], fp);
         fclose(fp);
 
-        // 通知内核缓冲区已释放
+        // inform the driver that the buffer is free
         if (ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0) {
             perror("qbuf failed");
             return -1;
