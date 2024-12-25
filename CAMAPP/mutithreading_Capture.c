@@ -16,13 +16,16 @@
 
 typedef struct {
     int fd;
+    int buffer_index; // Index of the buffer this thread will handle
     unsigned char *buffer;
     unsigned int length;
 } ThreadData;
 
+pthread_mutex_t lock; // 全局互斥锁
 void *capture_and_save(void *arg) {
     ThreadData *data = (ThreadData *)arg;
     int fd = data->fd;
+    int buffer_index = data->buffer_index;
     unsigned char *buffer = data->buffer;
     unsigned int length = data->length;
 
@@ -30,16 +33,16 @@ void *capture_and_save(void *arg) {
     memset(&capturebuffer, 0, sizeof(capturebuffer));
     capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     capturebuffer.memory = V4L2_MEMORY_MMAP;
+    capturebuffer.index = buffer_index; // Use the buffer index assigned to this thread
 
     for (int frame = 0; frame < FRAME_COUNT; frame++) {
-        capturebuffer.index = frame % BUFFER_COUNT; // use circular buffer
-
+        pthread_mutex_lock(&lock); // 锁定互斥锁
         if (ioctl(fd, VIDIOC_DQBUF, &capturebuffer) < 0) {
             perror("dqbuf failed");
             return NULL;
         }
 
-        // save to file
+        // Save to file
         char filename[32];
         snprintf(filename, sizeof(filename), "./output/capture%d", frame);
 
@@ -52,16 +55,18 @@ void *capture_and_save(void *arg) {
         fwrite(buffer + capturebuffer.m.offset, 1, capturebuffer.bytesused, fp);
         fclose(fp);
 
-        // inform the driver that the buffer is free
+        // Inform the driver that the buffer is free
         if (ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0) {
             perror("qbuf failed");
             return NULL;
         }
+        pthread_mutex_unlock(&lock); // 解锁互斥锁
     }
     return NULL;
 }
 
 int main() {
+    pthread_mutex_init(&lock, NULL); // 初始化互斥锁
     int fd = open(DEVICE_PATH, O_RDWR);
     if (fd < 0) {
         perror("open failed");
@@ -112,17 +117,12 @@ int main() {
         lengths[i] = mapbuffer.length;
 
         thread_data[i].fd = fd;
+        thread_data[i].buffer_index = i;
         thread_data[i].buffer = buffers[i];
         thread_data[i].length = lengths[i];
 
         if (ioctl(fd, VIDIOC_QBUF, &mapbuffer) < 0) {
             perror("qbuf failed");
-            close(fd);
-            return -1;
-        }
-
-        if (pthread_create(&threads[i], NULL, capture_and_save, &thread_data[i]) != 0) {
-            perror("pthread_create failed");
             close(fd);
             return -1;
         }
@@ -133,6 +133,14 @@ int main() {
         perror("streamon failed");
         close(fd);
         return -1;
+    }
+
+    for (int i = 0; i < BUFFER_COUNT; i++) {
+        if (pthread_create(&threads[i], NULL, capture_and_save, &thread_data[i]) != 0) {
+            perror("pthread_create failed");
+            close(fd);
+            return -1;
+        }
     }
 
     for (int i = 0; i < BUFFER_COUNT; i++) {
@@ -154,7 +162,7 @@ int main() {
     if (ioctl(fd, VIDIOC_REQBUFS, &reqbuf) < 0) {
         perror("requesting buffers release failed");
     }
-
+    pthread_mutex_destroy(&lock); // 销毁互斥锁
     close(fd);
     return 0;
 }

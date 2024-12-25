@@ -42,7 +42,6 @@ int main(){
         perror("requesting buffers failed");
         return -1;
     }
-sleep(2);
     // mapping
     unsigned char *buffers[BUFFER_COUNT];
     unsigned int lengths[BUFFER_COUNT];
