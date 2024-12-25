@@ -5,14 +5,16 @@
 #include <sys/ioctl.h>
 #include <unistd.h>    
 #include <sys/mman.h>
-#define BUFFER_COUNT 1
+#define BUFFER_COUNT 4
 #define DEVICE_PATH "/dev/video0"
 #define WIDTH 320
 #define HEIGHT 180
 #define V4L2_PIX_FMT V4L2_PIX_FMT_YUYV
+#define FRAME_COUNT 20
 int main(){
     //open device
-    int fd = open(DEVICE_PATH, O_RDWR);
+    // int fd = open(DEVICE_PATH, O_RDWR | O_NONBLOCK, 0);
+     int fd = open(DEVICE_PATH, O_RDWR );
     if(fd < 0){
         perror("open failed");
         return -1;
@@ -40,7 +42,7 @@ int main(){
         perror("requesting buffers failed");
         return -1;
     }
-
+sleep(2);
     // mapping
     unsigned char *buffers[BUFFER_COUNT];
     unsigned int lengths[BUFFER_COUNT];
@@ -49,7 +51,9 @@ int main(){
     mapbuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     for(int i = 0; i < BUFFER_COUNT; i++){
         mapbuffer.index = i;
+        sleep(1);
         if(ioctl(fd, VIDIOC_QUERYBUF, &mapbuffer) < 0){
+            printf("i = %d\n", i);
             perror("query buffer failed");
             return -1;
         }
@@ -68,26 +72,33 @@ int main(){
         perror("streamon failed");
         return -1;
     }
-    //example: capture 1 frames
-    struct v4l2_buffer capturebuffer; 
-    memset(&capturebuffer, 0, sizeof(capturebuffer));   
-    capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if(ioctl(fd, VIDIOC_DQBUF, &capturebuffer)  < 0){
-        perror("dqbuf failed");
-        return -1;
-    }
-    FILE *fp = fopen("capture", "wb");
-    if(fp == NULL){
-        perror("fopen failed");
-        return -1;
-    }
-    fwrite(buffers[capturebuffer.index], 1, lengths[capturebuffer.index], fp);
-    fclose(fp);
 
-    //inform  the kernel that the buffer is free
-    if(ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0){
-        perror("qbuf failed");
-        return -1;
+    //example: capture frames
+    for (int frame = 0; frame < FRAME_COUNT; frame++) {
+        struct v4l2_buffer capturebuffer;
+        memset(&capturebuffer, 0, sizeof(capturebuffer));
+        capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        if (ioctl(fd, VIDIOC_DQBUF, &capturebuffer) < 0) {
+            perror("dqbuf failed");
+            return -1;
+        }
+ 
+        // // 保存帧到文件
+        char filename[20];
+        snprintf(filename, sizeof(filename), "./output/capture%d", frame);
+        FILE *fp = fopen(filename, "wb");
+        if (fp == NULL) {
+            perror("fopen failed");
+            return -1;
+        }
+        fwrite(buffers[capturebuffer.index], 1, lengths[capturebuffer.index], fp);
+        fclose(fp);
+
+        // 通知内核缓冲区已释放
+        if (ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0) {
+            perror("qbuf failed");
+            return -1;
+        }
     }
     //stop capture
     if(ioctl(fd, VIDIOC_STREAMOFF, &type) < 0){
