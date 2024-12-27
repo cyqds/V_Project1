@@ -119,6 +119,7 @@ int main(int argc,char **argv){
             return -1;
         }
         buffers[i] = (unsigned char *)mmap(NULL, bufferinfo.length, PROT_READ|PROT_WRITE, MAP_SHARED, fd, bufferinfo.m.offset);
+        printf("buffer length: %d\n", bufferinfo.length);
         lengths[i] = bufferinfo.length;
         if(buffers[i] == MAP_FAILED){
             perror("mmap failed");
