@@ -1,4 +1,5 @@
-#include <poll.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <linux/videodev2.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
@@ -8,11 +9,12 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <getopt.h>
 
 
 
-
-#define BUFFER_COUNT 4
+#define BUFFER_COUNT 5
 
 typedef struct{
     int fd;
@@ -20,6 +22,25 @@ typedef struct{
     unsigned int length;
     int frame_count;
 }Thread_data;
+
+// check if a directory exists, create it if not
+int ensure_dir_exists(const char *path) {
+    struct stat st = {0};
+    if (stat(path, &st) == -1) {
+        //if the directory does not exist, create it
+        if (mkdir(path, 0777) != 0) {
+            perror("mkdir failed");
+            return -1;
+        }
+    } else if (!S_ISDIR(st.st_mode)) {
+        //path exists but is not a directory
+        fprintf(stderr, "Error: %s is not a directory\n", path);
+        return -1;
+    }
+    return 0;
+}
+
+
 
 void *capture_and_save(void *arg){
     Thread_data *data = (Thread_data *)arg;
@@ -33,26 +54,33 @@ void *capture_and_save(void *arg){
     capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     capturebuffer.memory = V4L2_MEMORY_MMAP;
 
-    struct pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = POLLIN;
+    fd_set fds;
+    struct timeval tv;
 
     for(int frame=-0; frame<frame_count; frame++){
-        int ret = poll(&pfd, 1, 5000);
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+        int ret = select(fd+1, &fds, NULL, NULL, &tv);
         if(ret == -1){
-            perror("poll error");
+            perror("select error");
             return NULL;
         }
         else if(ret == 0){
-            perror("poll timeout");
+            perror("select timeout");
             continue;
         }
-        if(pfd.revents & POLLIN){
+        if(FD_ISSET(fd, &fds)){
             if(ioctl(fd, VIDIOC_DQBUF, &capturebuffer) < 0){
                 perror("dqbuf failed");
                 return NULL;
             }
             char filename[32];
+            if(ensure_dir_exists("./output") != 0){
+                fprintf(stderr, "Error: failed to create output directory\n");
+                return NULL;
+            }
             snprintf(filename,sizeof(filename), "./output/frame%d", frame);
             FILE *fp = fopen(filename, "wb");
             if(fp == NULL){
@@ -70,16 +98,62 @@ void *capture_and_save(void *arg){
     return NULL;
 }
 
+
+
+
 int main(int argc,char **argv){
-    if (argc <6){
-        fprintf(stderr, "Usage: %s <device> <width> <height> <pixelformat> <frame_count>\n", argv[0]);
+    const char *device = NULL;
+    int width = 0;
+    int height = 0;
+    int pixelformat = 0;
+    int frame_count = 0;
+
+    static struct option long_options[] = {
+        {"device", required_argument, 0, 'd'},
+        {"width", required_argument, 0, 'w'},
+        {"height", required_argument, 0, 'h'},
+        {"pixelformat", required_argument, 0, 'p'},
+        {"frame_count", required_argument, 0, 'f'},
+        {0, 0, 0, 0}
+    };
+
+    int opt;
+    int option_index = 0;
+    while ((opt = getopt_long(argc, argv, "d:w:h:p:f:", long_options, &option_index)) != -1) {
+        switch (opt) {
+            case 'd':
+                device = optarg;
+                break;
+            case 'w':
+                width = strtol(optarg, NULL, 10);
+                break; 
+            case 'h':
+                height = strtol(optarg, NULL, 10);
+                break;
+            case 'p':
+                if (strlen(optarg) == 4) {
+                    pixelformat = v4l2_fourcc(optarg[0], optarg[1], optarg[2], optarg[3]);
+                } else {
+                    fprintf(stderr, "Invalid pixel format\n");
+                    return -1;
+                }
+                break;
+            case 'f':
+                frame_count = strtol(optarg, NULL, 10);
+                break;
+            default:
+                fprintf(stderr, "Usage: %s [--device=<device> | -d <device>] [--width=<width> | -w <width>] [--height=<height> | -h <height>] [--pixelformat=<pixelformat> | -p <pixelformat>] [--frame_count=<frame_count> | -f <frame_count>]\n", argv[0]);
+                return -1;
+        }
+    }
+
+    if (!device || width <= 0 || height <= 0 || pixelformat == 0 || frame_count <= 0) {
+        fprintf(stderr, "Usage: %s [--device=<device> | -d <device>] [--width=<width> | -w <width>] [--height=<height> | -h <height>] [--pixelformat=<pixelformat> | -p <pixelformat>] [--frame_count=<frame_count> | -f <frame_count>]\n", argv[0]);
         return -1;
     }
-    const char *device = argv[1];
-    int width = strtol(argv[2], NULL, 10);
-    int height = strtol(argv[3], NULL, 10);
-    int pixelformat = v4l2_fourcc(argv[4][0], argv[4][1], argv[4][2], argv[4][3]);
-    int frame_count = strtol(argv[5], NULL, 10);
+
+
+
     int fd = open(device, O_RDWR|O_NONBLOCK, 0);
     if(fd < 0){
         perror("open failed");
