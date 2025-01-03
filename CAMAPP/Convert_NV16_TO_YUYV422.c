@@ -60,17 +60,6 @@ void save_yuyv422(const char *filename, unsigned char *data, int width, int heig
 }
 
 int main(int argc, char *argv[]) {
-    // if (argc != 5) {
-    //     fprintf(stderr, "Usage: %s <nv16_file> <width> <height> <output_file>\n", argv[0]);
-    //     return EXIT_FAILURE;
-    // }
-    // const char *nv16_file = argv[1];
-    // int width = atoi(argv[2]);
-    // int height = atoi(argv[3]);
-    // const char *output_file = argv[4];
-
-
-    
     const char *nv16_file = NULL;
     int width = 0;
     int height = 0;
@@ -97,10 +86,6 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
         }
     }
-
-
-
- 
 
     if (width <= 0 || height <= 0 ) {
         fprintf(stderr, "Invalid width or height\n");
