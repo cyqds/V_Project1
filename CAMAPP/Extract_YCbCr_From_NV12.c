@@ -1,10 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>  
 
-#define MAX_WIDTH 320
-#define MAX_HEIGHT 180
-
-// save file as PGM
+// saving PGM data to a file
 void save_pgm(const char *filename, unsigned char *data, int width, int height) {
     FILE *file = fopen(filename, "wb");
     if (!file) {
@@ -17,22 +15,41 @@ void save_pgm(const char *filename, unsigned char *data, int width, int height) 
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "Usage: %s <nv12_file> <width> <height> <output_prefix>\n", argv[0]);
+    const char *nv12_file = NULL;
+    int width = 0;
+    int height = 0;
+    const char *output_prefix = NULL;
+
+    // parse command line arguments
+    int opt;
+    while ((opt = getopt(argc, argv, "i:w:h:o:")) != -1) {
+        switch (opt) {
+            case 'i':  
+                nv12_file = optarg;
+                break;
+            case 'w':  
+                width = atoi(optarg);
+                break;
+            case 'h':  
+                height = atoi(optarg);
+                break;
+            case 'o':  
+                output_prefix = optarg;
+                break;
+            default:
+                fprintf(stderr, "Usage: %s -i <nv12_file> -w <width> -h <height> -o <output_prefix>\n", argv[0]);
+                return EXIT_FAILURE;
+        }
+    }
+
+    // check if required arguments are provided
+    if (!nv12_file || width <= 0 || height <= 0 || !output_prefix) {
+        fprintf(stderr, "Missing or invalid arguments.\n");
+        fprintf(stderr, "Usage: %s -i <nv12_file> -w <width> -h <height> -o <output_prefix>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    const char *nv12_file = argv[1];
-    int width = atoi(argv[2]);
-    int height = atoi(argv[3]);
-    const char *output_prefix = argv[4];
-
-    if (width <= 0 || height <= 0 || width > MAX_WIDTH || height > MAX_HEIGHT) {
-        fprintf(stderr, "Invalid width or height\n");
-        return EXIT_FAILURE;
-    }
-
-    // malloc memory for NV12, Y, Cb, and Cr data
+    // malloc memory for NV12, Y, Cb, Cr data
     unsigned char *nv12_data = (unsigned char *)malloc(width * height * 3 / 2);
     unsigned char *y_channel = (unsigned char *)malloc(width * height);
     unsigned char *cb_channel = (unsigned char *)malloc(width * height / 4);
@@ -71,7 +88,7 @@ int main(int argc, char *argv[]) {
         cr_channel[i] = nv12_data[width * height + 2 * i + 1];
     }
 
-    // save Y, Cb, and Cr channels to files
+    // save Y, Cb, Cr channels to PGM files
     char filename[256];
     snprintf(filename, sizeof(filename), "%s_y.pgm", output_prefix);
     save_pgm(filename, y_channel, width, height);

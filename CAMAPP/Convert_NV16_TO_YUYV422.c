@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <getopt.h>
 
-#define MAX_WIDTH 320
-#define MAX_HEIGHT 180
+
+
 void nv16_to_yuyv422(const unsigned char* nv16, unsigned char* yuyv422, int width, int height) {
     int y_size = width * height;
     const unsigned char* y_plane = nv16;          
@@ -58,24 +60,56 @@ void save_yuyv422(const char *filename, unsigned char *data, int width, int heig
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "Usage: %s <nv16_file> <width> <height> <output_file>\n", argv[0]);
-        return EXIT_FAILURE;
+    // if (argc != 5) {
+    //     fprintf(stderr, "Usage: %s <nv16_file> <width> <height> <output_file>\n", argv[0]);
+    //     return EXIT_FAILURE;
+    // }
+    // const char *nv16_file = argv[1];
+    // int width = atoi(argv[2]);
+    // int height = atoi(argv[3]);
+    // const char *output_file = argv[4];
+
+
+    
+    const char *nv16_file = NULL;
+    int width = 0;
+    int height = 0;
+    const char *output_file = NULL;
+
+    // parse command line arguments
+    int opt;
+    while ((opt = getopt(argc, argv, "i:w:h:o:")) != -1) {
+        switch (opt) {
+            case 'i':  
+                nv16_file = optarg;
+                break;
+            case 'w':  
+                width = atoi(optarg);
+                break;
+            case 'h':  
+                height = atoi(optarg);
+                break;
+            case 'o':  
+                output_file = optarg;
+                break;
+            default:
+                fprintf(stderr, "Usage: %s -i <nv16_file> -w <width> -h <height> -o <output_file>\n", argv[0]);
+                return EXIT_FAILURE;
+        }
     }
 
-    const char *nv16_file = argv[1];
-    int width = atoi(argv[2]);
-    int height = atoi(argv[3]);
-    const char *output_file = argv[4];
 
-    if (width <= 0 || height <= 0 || width > MAX_WIDTH || height > MAX_HEIGHT) {
+
+ 
+
+    if (width <= 0 || height <= 0 ) {
         fprintf(stderr, "Invalid width or height\n");
         return EXIT_FAILURE;
     }
 
     // malloc memory for NV16 and YUYV422 data
     unsigned char *nv16_data = malloc(width * height * 2);
-    unsigned char *yuyv422_data = malloc(width * height * 2); 
+    unsigned char *yuyv422_data = malloc(width * height * 2); height;
     if (!nv16_data || !yuyv422_data) {
         perror("Failed to allocate memory");
         free(nv16_data);
