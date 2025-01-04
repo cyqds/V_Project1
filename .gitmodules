@@ -1,3 +1,3 @@
 [submodule "submodules/v4l-utils"]
-	path = submodules/v4l-utils
+	path = V4L-Utils/v4l-utils/
 	url = https://github.com/gjasny/v4l-utils.git

@@ -25,25 +25,6 @@ void nv16_to_yuyv422(const unsigned char* nv16, unsigned char* yuyv422, int widt
         yuyv422[j + 2] = y1;  // Y1
         yuyv422[j + 3] = v;   // V
     }
-// for (int y = 0; y < height; y++) {
-//         for (int x = 0; x < width; x += 2) {
-//             // extract Y components
-//             int y_index = y * width + x;
-//             unsigned char y0 = nv16_data[y_index];          
-//             unsigned char y1 = nv16_data[y_index + 1];      
-
-//             // extract UV components
-//             int uv_index = width * height + y * width + x;  
-//             unsigned char u = nv16_data[uv_index];          
-//             unsigned char v = nv16_data[uv_index + 1];    
-
-//             // 
-//             int yuyv_index = y * width * 2 + x * 2;        
-//             yuyv422_data[yuyv_index] = y0;                  
-//             yuyv422_data[yuyv_index + 1] = u;               
-//             yuyv422_data[yuyv_index + 2] = y1;             
-//             yuyv422_data[yuyv_index + 3] = v;               
-//         }
 }
     
 
@@ -60,17 +41,6 @@ void save_yuyv422(const char *filename, unsigned char *data, int width, int heig
 }
 
 int main(int argc, char *argv[]) {
-    // if (argc != 5) {
-    //     fprintf(stderr, "Usage: %s <nv16_file> <width> <height> <output_file>\n", argv[0]);
-    //     return EXIT_FAILURE;
-    // }
-    // const char *nv16_file = argv[1];
-    // int width = atoi(argv[2]);
-    // int height = atoi(argv[3]);
-    // const char *output_file = argv[4];
-
-
-    
     const char *nv16_file = NULL;
     int width = 0;
     int height = 0;
@@ -98,10 +68,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-
-
- 
-
     if (width <= 0 || height <= 0 ) {
         fprintf(stderr, "Invalid width or height\n");
         return EXIT_FAILURE;
@@ -109,7 +75,7 @@ int main(int argc, char *argv[]) {
 
     // malloc memory for NV16 and YUYV422 data
     unsigned char *nv16_data = malloc(width * height * 2);
-    unsigned char *yuyv422_data = malloc(width * height * 2); height;
+    unsigned char *yuyv422_data = malloc(width * height * 2); 
     if (!nv16_data || !yuyv422_data) {
         perror("Failed to allocate memory");
         free(nv16_data);

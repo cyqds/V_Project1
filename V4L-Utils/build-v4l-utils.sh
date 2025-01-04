@@ -2,7 +2,7 @@
 
 # setting the default variable value
 TAG_DEFAULT="v4l-utils-1.28.1"
-INSTALL_PATH_DEFAULT="/home/yongqi/Vscode_workspace/V_Project1/submodules/v4l-utils/install_dir"
+INSTALL_PATH_DEFAULT="/home/yongqi/Vscode_workspace/V_Project1/V4L-Utils/v4l-utils/install_dir"
 BUILD_PATH_DEFAULT="build/"
 ACTION="build"  
 #N_JOBS_DEFAULT=$(nproc)
@@ -56,7 +56,7 @@ if [ -z "$N_JOBS" ]; then
   N_JOBS=$N_JOBS_DEFAULT
 fi
 #switch to the v4l-utils submodule directory
-if ! cd submodules/v4l-utils/; then
+if ! cd v4l-utils/; then
     echo "cannot change directory to v4l-utils"
     exit 1
 fi
