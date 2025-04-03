@@ -12,9 +12,18 @@
 #include <sys/stat.h>
 #include <getopt.h>
 #include <errno.h>
-
+#include <stdatomic.h>
 #define BUFFER_COUNT 5
-
+/*
+Three kind of situations:1.only device 
+                         2.has device and m2mfile 
+                         3.ont thread has device、m2mfile and cap_dev,another thread have device and cap_dev doesn't have m2mfile
+*/
+static atomic_int g_stream_active = ATOMIC_VAR_INIT(1); 
+static struct fdinfo {
+    int fd;
+    int cap_fd;
+}fd_info;
 
 
 typedef struct {
@@ -30,6 +39,7 @@ typedef struct {
 
 typedef struct {
     int fd;
+    int cap_fd;
     unsigned char **buffers;
     unsigned char **buffers2;
     unsigned int *lengths;
@@ -104,13 +114,12 @@ int request_and_map_buffers(int fd, const char *m2m_file, enum v4l2_buf_type typ
         return 0;
     }
 
-
     
-    memset(&bufferinfo, 0, sizeof(bufferinfo));
-    bufferinfo.type = type;
-    bufferinfo.memory = V4L2_MEMORY_MMAP;
     struct v4l2_exportbuffer expbuf;
     for (int i = 0; i < buffer_count; i++) {
+        memset(&bufferinfo, 0, sizeof(bufferinfo));
+        bufferinfo.type = type;
+        bufferinfo.memory = V4L2_MEMORY_MMAP;
         bufferinfo.index = i;
         if (ioctl(fd, VIDIOC_QUERYBUF, &bufferinfo) < 0) {
             perror("query buffer failed");
@@ -118,14 +127,14 @@ int request_and_map_buffers(int fd, const char *m2m_file, enum v4l2_buf_type typ
             return -1;
         }
        
-            memset(&expbuf, 0, sizeof(expbuf));
-            expbuf.type  = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-            expbuf.index = i;
-            expbuf.plane = 0;
-            if (ioctl(fd, VIDIOC_EXPBUF, &expbuf)) {
-                return -1;
-            }
-            dmabuf[i] = expbuf.fd;
+        memset(&expbuf, 0, sizeof(expbuf));
+        expbuf.type  = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        expbuf.index = i;
+        expbuf.plane = 0;
+        if (ioctl(fd, VIDIOC_EXPBUF, &expbuf)) {
+            return -1;
+        }
+        dmabuf[i] = expbuf.fd;
  
         
         
@@ -154,13 +163,6 @@ int request_and_map_buffers(int fd, const char *m2m_file, enum v4l2_buf_type typ
             if (fp != -1) close(fp);
             return -1;
         }
-        unsigned int phys;
-        #define VIDIOC_GET_BUF_PHYS _IOR('V', BASE_VIDIOC_PRIVATE, unsigned int)
-        if(ioctl(fd,  VIDIOC_GET_BUF_PHYS,&phys))
-        {
-            printf("VIDIOC_GET_BUF_PHYS failed\n");
-            return -1;
-        }
     }
     
     if (fp != -1) {
@@ -182,9 +184,9 @@ int ensure_dir_exists(const char *path) {
     }
     return 0;
 }
-
-int capture_and_save(CaptureData *data) {
+int get_frame_to_m2m_loop(CaptureData *data){
     int fd = data->fd;
+    int cap_fd = data->cap_fd;
     unsigned char **buffers = data->buffers;
     unsigned int *lengths = data->lengths;
     int frame_count = data->frame_count;
@@ -201,16 +203,75 @@ int capture_and_save(CaptureData *data) {
         capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         capturebuffer.memory=V4L2_MEMORY_MMAP;
         FD_ZERO(&fds);
+        FD_SET(cap_fd, &fds);
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+        int ret = select(cap_fd + 1, &fds, NULL, NULL, &tv);
+        if (ret == -1) {
+            perror("select error");
+            return -1;
+        } else if (ret == 0) {
+            perror("select timeout");
+            continue;
+        }
+        
+        if (FD_ISSET(cap_fd, &fds)) {
+            if (ioctl(cap_fd, VIDIOC_DQBUF, &capturebuffer) < 0) {
+                perror("dqbuf2 failed");
+                return -1;
+            }
+            capturebuffer.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+            capturebuffer.memory = V4L2_MEMORY_DMABUF;
+            if (ioctl(fd, VIDIOC_QUERYBUF, &capturebuffer) < 0) {
+                perror("querybuf failed");
+                return -1;
+            }
+            capturebuffer.m.fd=data->dmabuf[capturebuffer.index];
+            capturebuffer.bytesused=capturebuffer.length;
+            if (ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0) {
+                perror("qbuf failed");
+                return -1;
+            }
+
+        }
+    }
+
+    return 0;
+}
+
+int capture_and_save(CaptureData *data) {
+    int fd = data->fd;
+    int cap_fd = data->cap_fd;
+    unsigned char **buffers = data->buffers;
+    unsigned int *lengths = data->lengths;
+    int frame_count = data->frame_count;
+    const char *cap = data->cap;
+    const char *m2mfile = data->m2m_file;
+   
+
+    struct v4l2_buffer capturebuffer;
+    memset(&capturebuffer, 0, sizeof(capturebuffer));
+    capturebuffer.memory = V4L2_MEMORY_MMAP; 
+    fd_set fds;
+    struct timeval tv;
+
+    for (int frame = 0; frame < frame_count; frame++) {
+        printf("frame:%d\n",frame);
+        if (!atomic_load(&g_stream_active)) {
+                    break;  
+            }
+        printf("frame:%d\n",frame);
+        capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        capturebuffer.memory=V4L2_MEMORY_MMAP;
+        FD_ZERO(&fds);
         FD_SET(fd, &fds);
         tv.tv_sec = 2;
         tv.tv_usec = 0;
-        printf("bbbbbbbbbbbbbbbbbbbbb %s,fd=%d\n",data->device,fd);
         int ret = select(fd + 1, &fds, NULL, NULL, &tv);
         if (ret == -1) {
             perror("select error");
             return -1;
         } else if (ret == 0) {
-            printf("bbbbbbbbbbbbbbbbbbbbb %s\n",data->device);
             perror("select timeout");
             continue;
         }
@@ -220,45 +281,24 @@ int capture_and_save(CaptureData *data) {
                 perror("dqbuf1 failed");
                 return -1;
             }
-            if(!m2mfile && cap){
-                printf("aaaaaaaaaaaaaaaaaaaaa\n");
-                capturebuffer.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-                capturebuffer.memory = V4L2_MEMORY_DMABUF;
-                ioctl(fd, VIDIOC_QUERYBUF, &capturebuffer);
-                printf("dmabuf=%d\n",data->dmabuf[capturebuffer.index]);
-                capturebuffer.m.fd=data->dmabuf[capturebuffer.index];
-                capturebuffer.bytesused=capturebuffer.length;
-                if(ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0){
-                    perror("qbuf failed");
-                    printf("hhhhhhhhhhhhhh\n");
-                    return -1;
-                return -0;
-                }
+            char filename[32];
+            if (ensure_dir_exists("./output") != 0) {
+                fprintf(stderr, "Error: failed to create output directory\n");
+                return -1;
             }
-            else{
-                printf("sssssssssss");
-                char filename[32];
-                if (ensure_dir_exists("./output") != 0) {
-                    fprintf(stderr, "Error: failed to create output directory\n");
-                    return -1;
-                }
-                
-                snprintf(filename, sizeof(filename), "./output/frame%d", frame);
-                FILE *fp = fopen(filename, "wb");
-                if (fp == NULL) {
-                    perror("fopen failed");
-                    return -1;
-                }
-                
-                printf("Writing frame %d, length: %d\n", frame, lengths[capturebuffer.index]);
-                fwrite(buffers[capturebuffer.index], 1, lengths[capturebuffer.index], fp);
-                fclose(fp);
-                }
+            
+            snprintf(filename, sizeof(filename), "./output/frame%d", frame);
+            FILE *fp = fopen(filename, "wb");
+            if (fp == NULL) {
+                perror("fopen failed");
+                return -1;
+            }
+            fwrite(buffers[capturebuffer.index], 1, lengths[capturebuffer.index], fp);
+            fclose(fp);
+  
                 
             capturebuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; 
    
-            printf("ppppppppppppppppppppp\n");
-        
             
             if (ioctl(fd, VIDIOC_QBUF, &capturebuffer) < 0) {
                 perror("qbuf failed1");
@@ -281,24 +321,32 @@ int capture_and_save(CaptureData *data) {
             if(cap){
                 outputbuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
                 outputbuffer.memory = V4L2_MEMORY_MMAP;
-                ioctl(fd, VIDIOC_QUERYBUF, &outputbuffer);
+                ioctl(cap_fd, VIDIOC_QUERYBUF, &outputbuffer);
+            }
+            if(cap){
+                if (ioctl(cap_fd, VIDIOC_QBUF, &outputbuffer) < 0) {
+                perror("qbuf failed2");
+                return -1;
+                }
+            }
+            else{
+                if (ioctl(fd, VIDIOC_QBUF, &outputbuffer) < 0) {
+                perror("qbuf failed3");
+                return -1;
+                }
+                
             }
             
-            if (ioctl(fd, VIDIOC_QBUF, &outputbuffer) < 0) {
-                perror("qbuf failed");
-                printf("sssssssssssssssssssssssssssssss");
-                return -1;
-            }
         }
     }
-    printf("DMA buffers: %d %d %d %d %d\n", 
-       data->dmabuf[0], data->dmabuf[1], data->dmabuf[2], data->dmabuf[3], data->dmabuf[4]);
     return 0;
+
 }
 
 void cleanup_resources(int fd, unsigned char **buffers, unsigned int *lengths, 
                       unsigned char **buffers2, unsigned int *lengths2, 
                       int has_m2m) {
+    
     // Unmap buffers
     for (int i = 0; i < BUFFER_COUNT; i++) {
         if (buffers[i] != NULL) {
@@ -335,12 +383,41 @@ void* v4l2_thread_function(void *arg) {
     int *dma_buf = params->dma_buf;
     int size = 0;
     int ret = 0;
+    int ret0 = 0;
 
     // Open device
     fd = open(params->device, O_RDWR | O_NONBLOCK, 0);
     if (fd < 0) {
         perror("open capture device failed");
         return (void*)-1;
+    }
+    if(params->cap&&!params->m2m_file){
+        fd_info.cap_fd=fd;
+    }
+    else{
+        fd_info.fd=fd;
+    }
+
+    
+    // Set output format if M2M file is provided
+    if (params->m2m_file) {
+        if(params->cap){
+            if (set_video_format(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT, 
+                            1280, 960, params->pixelformat) < 0) {
+            printf("222");
+            close(fd);
+            return (void*)-1;
+            }
+        }
+        else{
+            if (set_video_format(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT, 
+                            1920, 1080, params->pixelformat) < 0) {
+            printf("333\n");
+            close(fd);
+            return (void*)-1;
+            }
+
+        }
     }
 
     // Set capture format
@@ -349,27 +426,6 @@ void* v4l2_thread_function(void *arg) {
         close(fd);
         return (void*)-1;
     }
-    
-    // Set output format if M2M file is provided
-    if (params->m2m_file) {
-        if(params->cap){
-            if (set_video_format(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT, 
-                            1280, 960, params->pixelformat) < 0) {
-            close(fd);
-            return (void*)-1;
-            }
-        }
-        else{
-            if (set_video_format(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT, 
-                            1920, 1080, params->pixelformat) < 0) {
-            close(fd);
-            return (void*)-1;
-            }
-
-        }
-    }
-
-
 
     // Request and map capture buffers
     if (request_and_map_buffers(fd, NULL, V4L2_BUF_TYPE_VIDEO_CAPTURE, 
@@ -406,7 +462,8 @@ void* v4l2_thread_function(void *arg) {
     
     // Prepare capture data
     CaptureData cap_data = {
-        .fd = fd,
+        .fd = fd_info.fd,
+        .cap_fd = fd_info.cap_fd,
         .buffers = buffers,
         .buffers2 = buffers2,
         .lengths = lengths,
@@ -420,10 +477,16 @@ void* v4l2_thread_function(void *arg) {
     };
     
     // Perform capture
+    if(params->cap&&!params->m2m_file){
+        ret0=get_frame_to_m2m_loop(&cap_data);
+    }
+    else{
     ret = capture_and_save(&cap_data);
-    
-    // Stop streams
+    }
 
+    // Stop streams
+    atomic_store(&g_stream_active, 0);
+    usleep(100000);  
     type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     ioctl(fd, VIDIOC_STREAMOFF, &type);
 
@@ -503,10 +566,10 @@ int main(int argc, char **argv) {
 
     cap_params.dma_buf = dma_buf;
     out_params.dma_buf = dma_buf;
-    printf("cap_params.cap: %s,cap_prarams.device:%s\n",cap_params.cap,cap_params.device);
-    printf("out_params.cap: %s,out_prarams.device:%s\n",out_params.cap,out_params.device);
+    // printf("cap_params.cap: %s,cap_prarams.device:%s\n",cap_params.cap,cap_params.device);
+    // printf("out_params.cap: %s,out_prarams.device:%s\n",out_params.cap,out_params.device);
     pthread_t thread,cap_thread;
-    if(cap_params.cap){
+    if(cap_params.cap && !cap_params.m2m_file){
         if(pthread_create(&cap_thread, NULL, v4l2_thread_function, &cap_params) != 0){
             perror("pthread_create failed");
             return -1;
@@ -526,7 +589,7 @@ int main(int argc, char **argv) {
     pthread_join(thread, &out_ret);
     
     if ((intptr_t)out_ret != 0) {
-        fprintf(stderr, "Thread execution failed\n");
+        fprintf(stderr, "Thread execution failed1\n");
         return -1;
     }
     if(cap_params.cap){
