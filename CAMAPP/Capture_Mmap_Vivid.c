@@ -307,6 +307,9 @@ int capture_and_save(CaptureData *data) {
         }
         
         if (data->m2m_file) {
+            // if (!atomic_load(&g_stream_active)) {
+            //         continue;  // 流已停止，跳过处理
+            // }
             struct v4l2_buffer outputbuffer;
             memset(&outputbuffer, 0, sizeof(outputbuffer));
             outputbuffer.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
@@ -325,7 +328,7 @@ int capture_and_save(CaptureData *data) {
             }
             if(cap){
                 if (ioctl(cap_fd, VIDIOC_QBUF, &outputbuffer) < 0) {
-                perror("qbuf failed2");
+                perror("qbuf failed");
                 return -1;
                 }
             }
